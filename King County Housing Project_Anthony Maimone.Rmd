@@ -1,0 +1,181 @@
+---
+title: "King County Housing Project - Anthony Maimone"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(caret)
+
+setwd("~/Documents/220/Projects")
+
+# I modified the provided King County housing data with a supplemental data source that included the city each zip code corresponds to. I merged the two tables in using Power Query, which resulted in adding in another column for the city. 
+
+houses = read.delim('kc_house_data_mod.csv', sep = ',', header = TRUE)
+
+head(houses)
+
+set.seed(1243)
+
+```
+
+```{r}
+# EDA
+
+# Let'stake a look at what the avergae home price is for each city
+avg_price_city <- houses %>% group_by(city)%>% summarize(avg_price = mean(price))
+
+avg_price_city
+
+# Medina, Mercer Island, and Bellevue seem to be the most expensive cities in King County!
+
+ggplot(houses, aes( x = sqft_living, y = price)) +
+  geom_point() +
+  labs(title = 'House Sqft vs Price')
+
+ggplot(houses, aes( x = grade, y = price)) +
+  geom_point() +
+  labs(title = 'House Grade vs Price')
+
+ggplot(houses, aes( x = condition, y = price)) +
+  geom_point() +
+  labs(title = 'House Condition vs Price')
+
+# positive correlation between square feet and price, and house grade and price. Condition does seems to affect price, however it does not seem to have as strong of a positive correlation as the other varibles. 
+
+```
+
+
+```{r}
+# feature engineering
+
+# As mentioned above, I pulled additional data from the web that provided the city name that corresponds to each zipcode. I then merged that data table on the zipcode column using Power Query to add the city column to the dataset. I did this so that I could easily filter the dataset to only include Eastside homes. 
+
+houses <- houses %>% mutate(city = as.character(city))
+
+# filter to only include houses located in Eastside cities. 
+
+east <- houses %>% filter(city == 'Bellevue' | city == 'Kirkland' | city == 'Redmond' | city == 'Woodinville' | city == 'Issaquah' | city == 'Newcastle' | city == 'Sammamish' | city == 'Bothell')
+
+# create binary columns for city
+
+city = model.matrix(~ city - 1, data = east)
+
+east = cbind(east, city)
+
+# remove city column since the dataset now has binary columsn for cities. Also removing other uneeded columns for model
+
+east = select(east, -city, -id, -date, -lat, -long)
+
+head(east)
+
+```
+
+```{r}
+# split into test and training sets
+
+in_train = createDataPartition(y = east$price,
+                               p = 0.8,  
+                               list = FALSE)
+
+east_train = east[in_train, ]
+east_test = east[-in_train, ]
+
+# Preprocess
+
+nearZeroVar(east_train, saveMetrics = TRUE)
+
+preprocessing_steps2 = preProcess(select(east, waterfront, view, sqft_basement, yr_renovated, cityBothell), 
+                                 method = c('nzv'))
+
+east_train_proc2 = predict(preprocessing_steps2, newdata=east_train) 
+east_test_proc2 = predict(preprocessing_steps2, newdata=east_test)
+
+```
+
+```{r}
+# Model Fitting
+
+# First Model 
+
+linear_model = train(price ~ .,
+                  data = east_train_proc2,
+                  method = 'lm',
+                  metric = 'MAE')
+
+pred_linear = predict(linear_model, newdata = east_test_proc2)
+
+postResample(pred = pred_linear, obs = east_test_proc2$price)
+
+summary(linear_model)
+plot(varImp(linear_model))
+
+linear_model
+
+errors = data.frame(predicted = pred_linear, 
+                    observed = east_test_proc2$price, 
+                    error = pred_linear - east_test_proc2$price)
+
+ggplot(data = errors, aes(x = predicted, y = observed)) + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1, color = 'red') +
+  labs(title = 'lm Model')
+
+# the MAE is 136862.7 dollars
+ 
+```
+
+```{r}
+# Second Model
+
+lasso_model = train(price ~ cityKirkland + sqft_living + cityRedmond + citySammamish + cityWoodinville + cityIssaquah + cityBellevue + grade + bedrooms +bathrooms + zipcode,
+                  data = east_train_proc2,
+                  method = 'lasso',
+                  metric = 'MAE',
+                  tuneLength = 10, 
+                  trControl = trainControl(method = 'cv', number = 8))
+
+pred_lasso = predict(lasso_model, newdata = east_test_proc2)
+
+summary(lasso_model)
+
+lasso_model
+
+errors2 = data.frame(predicted = pred_lasso, 
+                    observed = east_test_proc2$price, 
+                    error = pred_lasso - east_test_proc2$price)
+
+ggplot(data = errors2, aes(x = predicted, y = observed)) + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1, color = 'red') +
+  labs(title = 'Lasso Regression Model')
+
+# the MAE is 136395.6 dollars
+
+```
+
+
+```{r}
+# If I want a good condition and good grade 4 bedroom 3 bath house in Kirkland, what price can I expect?
+
+my_house = data_frame(bedrooms = as.integer(4), bathrooms = 3, sqft_living = 1800.0, sqft_lot = 0.6, floors = 2, condition = as.integer(8), grade = as.integer(8), sqft_above = 0.5, yr_built = as.integer(2000), zipcode = 98034, sqft_living15 = as.integer(1800.0), sqft_lot15 = as.integer(5000), cityBellevue = 0, cityIssaquah = 0, cityKirkland = 1, cityRedmond = 0, citySammamish = 0, cityWoodinville = 0)
+
+my_house
+
+my_house_pred = predict(lasso_model, newdata = my_house)
+
+my_house_pred
+
+#Given my desired inputs of a house in 4 bedroom 3 bath with 1800 square feet in Kirkland with grade and conditions of 8, the lasso model predicted the price would be $566,071.7. This is well below the average house price in Kirkland of $646,374.2 as identified earlier in this notebook. Ultimately the lasso model performed slightly better than the standard linear model at predicting home prices, however the error was still pretty large.
+
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
