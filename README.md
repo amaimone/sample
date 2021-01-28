@@ -8,6 +8,8 @@ I have recently opted to shift career paths and dive deep into data analytics. T
 
 2. "King County Housing Project.Rmd" is my R code for another project where I take a look at the housing data provided by King County, Washington. In this report, I look at major variables to consider when purchasing a home and how those can affect the home's price. I compare two different models and use one to predict a home's price given specific parameters. "King County Housing Project - Report.pdf" is a written analysis report to supplement the R code. The data used, "kc_house_data_mod.csv", is also provided in this repository if you would like to run the code for yourself.
 
+3. "Chief Officer Analysis.py" is a Python script file that contains code that imports .json files and uses those to create meaningful bar charts to evaluate the most important skill set(s) for either a CEO, CFO, or COO position. There is also an associated "Chief Officer Analysis - Presentation.pdf" included to see the visualizations. 
+
 Thank you for checking out my work!
 
 - Anthony 
